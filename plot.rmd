@@ -1,0 +1,748 @@
+---
+title: "Plots"
+author: "Scott Spillias"
+date: "8/27/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+# library(gdxrrw)
+# igdx("C:/GAMS/38")
+#devtools::install_github("dill/beyonce")
+library(beyonce)
+library(tmap)
+library(terra)
+library(sf)
+
+library(patchwork)
+```
+
+```{r}
+reference_scenario = ""
+load("1476.RData")
+
+figure_folder <- function(x){
+  path = file.path(getwd(),'Plots',
+                   x)
+  print(path)
+  return(path)
+}
+
+
+scen_pub_names_new <- scen_pub_names |>
+  mutate(PUBSCEN = case_when(
+    PUBSCEN == "Diet -10 NonFed 0 Capture -10" ~ "Barriers to Blue Growth",
+    PUBSCEN == "Diet 0 NonFed 0 Capture 0" ~ "BAU",
+    PUBSCEN == "Diet +10 NonFed +50 Capture +10" ~ "Blue Transformation",
+    PUBSCEN == is.na(PUBSCEN) ~ "FAO",
+    TRUE ~ as.character(PUBSCEN)
+  ))
+
+raw_scen_names <- c("SCEN_DIET-10_CULTURE0_CAPTURE-10","SCEN_DIET0_CULTURE0_CAPTURE0","SCEN_DIET+10_CULTURE+50_CAPTURE+10")
+scen_include <- function(x){
+  x %>% filter(ALLSCEN3 %in% raw_scen_names)
+}
+
+production_df_detailed <- output_ag_2020 %>% filter(VAR_ID == 'PROD',ITEM_AG %in% c('CRP','LSP',VAR_UNIT == '1000 T')) %>% 
+  group_by(ITEM_AG,ALLSCEN3,YEAR) %>% 
+  summarise(output = sum(OUTPUT_AG)) %>% 
+  rename('TYPE' = 'ITEM_AG') %>% 
+  bind_rows(
+    fish_var_2020  %>% #  filter(ALLSCEN3 %in% c("SCEN_BAU", "SCEN_DIET_+05"#, "SCEN_CAP_WILD"           )) %>% 
+      mutate(Inland = ifelse(as.numeric(FISHREG) < 10 | FISHSYST == "AQUA_F","Inland","Marine") ) %>% ################ FFFFIIIIXXX THIS
+      mutate(GROUP = case_when(FISHSPEC %in% c("DMRS","MARN","SALM","TUNA","FRSH","PELG") ~ "Finfish",
+                               FISHSPEC %in% c("SHRI","CRST") ~ "Crustaceans",
+                               FISHSPEC %in% c("MLSC","CEPH") ~ "Molluscs"),
+             TYPE = ifelse(FISHSYST == 'CATCH',"CATCH","CULTURE")) %>%
+      group_by(ALLSCEN3, #TYPE, 
+               TYPE,FISHFEEDSYST, #Inland,
+               YEAR#, GROUP
+      ) %>% {products <<- .}  %>% 
+      summarise(output = sum(FISH_VAR_COMPARE)) 
+  ) 
+
+```
+
+
+```{r Figure 1: Demand}
+live_final <- c("BVMEAT","SGMEAT","PGMEAT","PTMEAT","ALMILK","PTEGGS")
+  # tidy_globiom("DemQuantity_Compare") %>% 
+DData %>%
+  scen_include %>%
+  filter(PRODUCT %in% c(fish_final, live_final)) %>%
+  mutate(
+    product_type = case_when(
+      PRODUCT %in% fish_final ~ "Fish",
+      PRODUCT %in% live_final ~ "Livestock",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  left_join(pWASTE_) %>%
+  mutate(ITEMw = ifelse(is.na(ITEMw), 1, ITEMw)) %>%
+  mutate(value = case_when(
+    product_type == "Fish" ~ DDATA_COMPARE / (1 - ITEMw), ### INVERT BACK TO LIVE WEIGHT FOR FISH ONLY
+    TRUE ~ DDATA_COMPARE ### LEAVE LIVESTOCK UNTRANSFORMED
+  )) %>%
+  group_by(product_type, YEAR, ALLSCEN3) %>%
+  filter(CURVE == 'QUANTITY') %>%
+  summarise(DData = value %>% sum, .groups = 'drop') %>%
+  pivot_longer(DData) %>%
+  bind_rows(
+    DemQuantity %>%
+      scen_include %>%
+      filter(PRODUCT %in% c(fish_final, live_final)) %>%
+      mutate(
+        product_type = case_when(
+          PRODUCT %in% fish_final ~ "Fish",
+          PRODUCT %in% live_final ~ "Livestock",
+          TRUE ~ "Other"
+        )
+      ) %>%
+      left_join(pWASTE_) %>%
+      mutate(value = case_when(
+        product_type == "Fish" ~ DEMQUANTITY_COMPARE / (1 - ITEMw), ### INVERT BACK TO LIVE WEIGHT FOR FISH ONLY
+        TRUE ~ DEMQUANTITY_COMPARE ### LEAVE LIVESTOCK UNTRANSFORMED
+      )) %>%
+      group_by(product_type, YEAR, ALLSCEN3) %>%
+      # filter(CURVE == 'QUANTITY') %>%
+      summarise(DemQ = value %>% sum, .groups = 'drop') %>%
+      pivot_longer(DemQ)
+  ) %>%
+  left_join(scen_pub_names_new) %>%
+  # mutate(PUBSCEN = factor(PUBSCEN, levels = pub_levels)) %>%
+  filter(name == 'DemQ') %>%
+  # left_join(fish_pub_names) %>%
+  ggplot(aes(x = YEAR, y = value / 1000, col = PUBSCEN, group = PUBSCEN)) +
+  geom_line() +
+  geom_point(size = 3) +
+  # geom_text(aes(label = dem/1000)) +
+  ylab("Global Demand (MT)") +
+  xlab("Year") +
+  # ylim(0,100)+
+  theme_classic() +
+  facet_wrap(~product_type, scales = "free_y") +
+  scale_color_manual(
+    values = beyonce_palette(40, type = 'continuous', n = 4)[-1] %>% rev(),
+    name = "Scenario"
+  )
+ggsave(figure_folder('1_demand_lineplot.png'), width = 6, height = 4, unit = 'in')
+
+  # tidy_globiom("DemQuantity_Compare") %>% 
+   DData %>% 
+  scen_include %>% 
+  filter(PRODUCT %in% fish_final) %>% 
+    left_join(pWASTE_) %>% 
+    mutate(value = DDATA_COMPARE/(1-ITEMw)) %>% ### INVERT BACK TO LIVE WEIGHT
+  group_by(REGION,
+    YEAR,ALLSCEN3) %>% 
+      filter(CURVE == 'QUANTITY') %>% 
+  summarise(DData = value %>% sum) %>% 
+      pivot_longer(DData) %>% 
+      bind_rows(
+         DemQuantity %>% 
+  scen_include %>% 
+  filter(PRODUCT %in% fish_final) %>% 
+    left_join(pWASTE_) %>% 
+    mutate(value = DEMQUANTITY_COMPARE/(1-ITEMw)) %>% ### INVERT BACK TO LIVE WEIGHT
+  group_by(REGION,
+    YEAR,ALLSCEN3) %>% 
+    #  filter(CURVE == 'QUANTITY') %>% 
+  summarise(DemQ = value %>% sum) %>% 
+    pivot_longer(DemQ)
+      ) %>% 
+     left_join(scen_pub_names_new) %>% 
+      #  mutate(PUBSCEN = factor(PUBSCEN, levels = pub_levels)) %>% 
+       filter(name == 'DemQ') %>%
+
+  #left_join(fish_pub_names) %>% 
+  ggplot(aes(x = YEAR,y = value/1000, col = PUBSCEN, group = PUBSCEN
+  )) +
+  geom_line() +
+  geom_point() +
+           # geom_text(aes(label = dem/1000)) +
+
+  ylab("Global Demand (MT)") +
+  xlab("Year") +
+  # ylim(0,100)+
+  theme_classic() +
+    facet_wrap(~REGION, scales = 'free') +
+  scale_color_manual(values = beyonce_palette(40, type = 'continuous', n = 4)[-1] %>% rev(),
+                     name = "Scenario") 
+  
+ggsave(figure_folder('1_demand_lineplot_region.png'), width = 12, height = 8, unit = 'in')
+
+```
+
+
+```{Demand per Capita}
+# Get global population data for ALL scenarios
+global_pop <- output %>%
+  filter(VAR_ID == "POPT") %>%
+  group_by(YEAR, ALLSCEN3) %>%  # Group by scenario too
+  summarise(total_pop = sum(OUTPUT, na.rm = TRUE), .groups = 'drop')
+
+# Calculate per capita demand
+DData %>%
+  scen_include %>%
+  filter(PRODUCT %in% c(fish_final, live_final)) %>%
+  mutate(
+    product_type = case_when(
+      PRODUCT %in% fish_final ~ "Fish",
+      PRODUCT %in% live_final ~ "Livestock",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  left_join(pWASTE_) %>%
+  mutate(ITEMw = ifelse(is.na(ITEMw), 1, ITEMw)) %>%
+  mutate(value = case_when(
+    product_type == "Fish" ~ DDATA_COMPARE / (1 - ITEMw), ### INVERT BACK TO LIVE WEIGHT FOR FISH ONLY
+    TRUE ~ DDATA_COMPARE ### LEAVE LIVESTOCK UNTRANSFORMED
+  )) %>%
+  group_by(product_type, YEAR, ALLSCEN3) %>%
+  filter(CURVE == 'QUANTITY') %>%
+  summarise(DData = value %>% sum, .groups = 'drop') %>%
+  # Add debugging: uncomment to see actual totals BY SCENARIO
+  # filter(YEAR == 2030, ALLSCEN3 == "SCEN_DIET-10_CULTURE0_CAPTURE-10") %>% print() %>%
+  pivot_longer(DData) %>%
+  bind_rows(
+    DemQuantity %>%
+      scen_include %>%
+      filter(PRODUCT %in% c(fish_final, live_final)) %>%
+      mutate(
+        product_type = case_when(
+          PRODUCT %in% fish_final ~ "Fish",
+          PRODUCT %in% live_final ~ "Livestock",
+          TRUE ~ "Other"
+        )
+      ) %>%
+      left_join(pWASTE_) %>%
+      mutate(value = case_when(
+        product_type == "Fish" ~ DEMQUANTITY_COMPARE / (1 - ITEMw), ### INVERT BACK TO LIVE WEIGHT FOR FISH ONLY
+        TRUE ~ DEMQUANTITY_COMPARE ### LEAVE LIVESTOCK UNTRANSFORMED
+      )) %>%
+      group_by(product_type, YEAR, ALLSCEN3) %>%
+      # filter(CURVE == 'QUANTITY') %>%
+      summarise(DemQ = value %>% sum, .groups = 'drop') %>%
+      pivot_longer(DemQ)
+  ) %>%
+  left_join(scen_pub_names_new) %>%
+  filter(name == 'DemQ') %>%
+  # Join with population data to calculate per capita
+  left_join(global_pop, by = c("YEAR", "ALLSCEN3")) %>%  # Join by both YEAR and ALLSCEN3
+  # Add debugging output
+mutate(per_capita_kg = (value / 1000 / total_pop) * 1000) %>% # Uncomment these lines to debug:
+  #glimpse() %>%
+  #filter(YEAR == 2030) %>% print() %>%
+  ggplot(aes(x = YEAR, y = per_capita_kg, col = PUBSCEN, shape = product_type, group = interaction(PUBSCEN, product_type))) +
+  geom_line() +
+  geom_point(size = 3) +
+  ylab("Per Capita Demand (kg/person)") +
+  xlab("Year") +
+  theme_classic() +
+  scale_color_manual(
+    values = beyonce_palette(40, type = 'continuous', n = 4)[-1] %>% rev(),
+    name = "Scenario"
+  ) +
+  scale_shape_manual(
+    values = c("Fish" = 16, "Livestock" = 17),
+    name = "Product Type"
+  )
+  ggsave(figure_folder('1_demand_percapita.png'), width = 6, height = 4, unit = 'in')
+
+```
+
+```{r Figure 2 Production Dynamics}
+## Figure S1 Production Dynamics
+historical_data <- "YEAR,CATCH,CULTURE
+1950,18,0
+1960,25,1
+1970,36,3
+1980,49,5
+1990,82,15
+2000,91.3,29.6
+2010,85.6,51.8
+2020,90.8,88.3
+"
+# 1 2000    CATCH     91300.
+#  2 2000    CULTURE   29854.
+#  3 2010    CATCH     85669.
+#  4 2010    CULTURE   51756.
+#  5 2020    CATCH     90704.
+#  6 2020    CULTURE   78523.
+#  7 2030    CATCH     88293.
+#  8 2030    CULTURE  200384.
+#  9 2040    CATCH     88293.
+# 10 2040    CULTURE  458886.
+# 11 2050    CATCH     88293.
+# 12 2050    CULTURE 1118618.
+
+data <- read.csv(text = historical_data) %>% 
+  as_tibble() %>% 
+  pivot_longer(-YEAR,names_to = 'TYPE',values_to = 'output') %>% 
+  mutate(PUBSCEN = "FAO",
+         YEAR = as.character(YEAR),
+         output = 1000*output,
+         Source = 'FAO') 
+
+
+production_df <- production_df_ %>% 
+  scen_include()
+
+products <- products %>% 
+    scen_include()
+
+pub_levels = production_df %>% filter(TYPE == 'CULTURE',YEAR == max(production_df %>% pull(YEAR))) %>% 
+  arrange(output) %>% pull(PUBSCEN) %>% rev()# filter(!(PUBSCEN %>% str_detect("Production"))) %>% 
+  #  dplyr::select(-ALLSCEN3) %>% 
+  # group_by(GROUP,FISHSYST, Inland, YEAR) %>%
+  # summarise(output = sum(output)) %>%
+  # filter(YEAR == 2020) %>%
+  # # mutate(output = ifelse(FISHSYST == "CATCH",-1*output, output)) %>%
+  # filter(TYPE %in% c("CULTURE","CATCH"), ALLSCEN3 != "SCEN_REF_2020") %>% 
+  # mutate(Source = 'This Study') %>% 
+  # bind_rows(data)
+
+production_df %>% # filter(!(PUBSCEN %>% str_detect("Production"))) %>% 
+  #  dplyr::select(-ALLSCEN3) %>% 
+  # group_by(GROUP,FISHSYST, Inland, YEAR) %>%
+  # summarise(output = sum(output)) %>%
+  # filter(YEAR == 2020) %>%
+  # mutate(output = ifelse(FISHSYST == "CATCH",-1*output, output)) %>%
+  filter(TYPE %in% c("CULTURE","CATCH"), ALLSCEN3 != "SCEN_REF_2020") %>% 
+  mutate(Source = 'This Study') %>% 
+    filter(!is.na(PUBSCEN)) %>% 
+
+  bind_rows(data) %>% 
+  # mutate(PUBSCEN = factor(PUBSCEN, levels = pub_levels)) %>% 
+  filter(ALLSCEN3 %in% raw_scen_names | is.na(ALLSCEN3)) %>% 
+  dplyr::select(-PUBSCEN)%>%
+  left_join(scen_pub_names_new) %>% 
+  mutate(PUBSCEN = ifelse(is.na(PUBSCEN),"FAO",PUBSCEN)) %>%
+  ggplot() + 
+  geom_line(aes(x = YEAR,
+                y = output/1000,
+                linetype = Source,
+                group = PUBSCEN,
+                col = PUBSCEN
+  )) +
+  geom_point(aes(x = YEAR,
+                 y = output/1000,
+                # linetype = Source,
+                 group =PUBSCEN,
+                 col = PUBSCEN
+  )) +
+  theme_classic() +
+  #facet_grid(TYPE~Inland) +
+  # scale_y_log10() +
+  # scale_y_continuous(breaks = c((-4:4)*20)) +
+  scale_color_manual(values = beyonce_palette(40, type = 'continuous', n = 4) %>% rev(),
+                      name = 'Scenario') +
+  scale_linetype_manual(values = c("dashed", "solid")) +
+  # geom_hline(yintercept = 0) +
+  ylab('Production (Mt)') +
+  xlab(NULL) +
+  facet_wrap(~TYPE,ncol = 1,scales = 'free')
+ggsave(figure_folder("1_production_lineplot.png"),width = 9, height = 6)
+```
+
+
+```{r Figure 2 Production in 2050 Comparison}
+# # Figure 2 - Version 1 [ Note Figure 1 is a conceptual diagram]
+# products %>% 
+#   filter(YEAR %in% c(2050)) %>% 
+#     group_by(ALLSCEN3,GROUP,TYPE,YEAR) %>% 
+#   summarise(output = sum(FISH_VAR_COMPARE)) %>% 
+#   select(-YEAR) %>% 
+#   left_join(scen_pub_names) %>% 
+#   mutate(GROUP = factor(GROUP, levels = c("Finfish", "Crustaceans", "Molluscs") %>% rev()),
+#          PUBSCEN = factor(PUBSCEN, levels = pub_levels)) %>%
+  
+#   # bind_rows(scen_2020) %>% 
+
+#   # mutate(TYPE = )
+# ggplot() + 
+#   geom_bar( 
+#     aes(x = PUBSCEN, 
+#         y = output/1000,
+#         fill = GROUP), 
+#     stat = "identity", 
+#     position = "stack"
+#   ) +
+#   facet_grid(~ TYPE, scales = 'free') +
+#   theme_classic() +
+#   ylab('Production (Mt)') +
+#   xlab(NULL) +
+#   coord_flip() +
+#   scale_fill_manual(
+#     breaks = c("Finfish", "Crustaceans", "Molluscs"),
+#     values = c('skyblue', 'orange', 'forestgreen')
+#   ) +
+#   theme(
+#     legend.position = "bottom",        # Place legend at the bottom
+#     strip.placement = "outside",       # Keep facet strip labels outside the plot
+#     axis.title.y = element_blank(),    # Remove y-axis title
+#     axis.text.y = element_text(size = 10),  # Keep axis text size
+#     axis.ticks.y = element_blank(),    # Remove y-axis ticks for cleaner look
+#     strip.text.y = element_text(angle = 0)  # Ensure facet strip text is horizontal
+#   ) +
+#   theme(panel.spacing = unit(0, "lines")) # Remove spacing between panels to align labels
+# ggsave(figure_folder("S2_production_ref.png"), height = 4, width = 7)
+
+# # Figure 2 - Version 2
+# production_df %>%
+#   filter(YEAR %in% c(2050)) %>%
+#   select(-YEAR,-DIET,-CAPACITY,-PUBSCEN) %>% ungroup() %>% 
+#   pivot_wider(names_from = ALLSCEN3, values_from = output) %>% 
+#    mutate(across(starts_with('SCEN'), function(x) x- SCEN_DIET0_CULTURE0_CAPTURE0)) %>% 
+#   pivot_longer(starts_with('SCEN'),values_to = 'output', names_to = 'ALLSCEN3') %>% 
+#   left_join(scen_pub_names) %>% 
+#   # mutate(TYPE = )
+#   ggplot() +
+#   geom_bar(
+#     aes(x = ALLSCEN3,
+#         y = output/1000),
+#     stat = "identity",
+#     position = "dodge") +
+#   facet_wrap(~ TYPE, scales = 'free') +
+#   theme_classic() +
+#   ylab('Delta Production (Mt change from 2020)') +
+#   xlab(NULL) +
+#   coord_flip() +
+#   scale_fill_manual(breaks = c("Finfish", "Crustaceans", "Molluscs"),
+#                       values = c('skyblue', 'orange','forestgreen')) 
+# ggsave(figure_folder("S2_production_noref.png"))
+```
+
+
+```{r Supplemental Figure X. Demand Trends}
+
+
+ 
+#  # tidy_globiom("DemQuantity_Compare") %>% 
+#    DData %>% 
+#   scen_include %>% 
+#   filter(PRODUCT %in% "TUNAF") %>% 
+#     left_join(pWASTE_) %>% 
+#     mutate(value = DDATA_COMPARE/(1-ITEMw)) %>% ### INVERT BACK TO LIVE WEIGHT
+#   group_by(#PRODUCT,
+#     YEAR,ALLSCEN3) %>% 
+#       filter(CURVE == 'QUANTITY') %>% 
+#   summarise(DData = value %>% sum) %>% 
+#       pivot_longer(DData) %>% 
+#       bind_rows(
+#          DemQuantity %>% 
+#   scen_include %>% 
+#   filter(PRODUCT %in% "TUNAF") %>% 
+#     left_join(pWASTE_) %>% 
+#     mutate(value = DEMQUANTITY_COMPARE/(1-ITEMw)) %>% ### INVERT BACK TO LIVE WEIGHT
+#   group_by(#PRODUCT,
+#     YEAR,ALLSCEN3) %>% 
+#     #  filter(CURVE == 'QUANTITY') %>% 
+#   summarise(DemQ = value %>% sum) %>% 
+#     pivot_longer(DemQ)
+#       ) %>% 
+
+#   #left_join(fish_pub_names) %>% 
+#   ggplot(aes(x = YEAR,y = value/1000, col = name, group = name
+#   )) +
+#   geom_line() +
+#   geom_point() +
+#            # geom_text(aes(label = dem/1000)) +
+
+#   ylab("Demand (MT)") +
+#   xlab("Year") +
+#   # ylim(0,100)+
+#   theme_classic() +
+#     facet_wrap(~PUBSCEN) +
+#   scale_color_manual(values = beyonce_palette(40, type = 'continuous', n = 10),
+#                      name = "Group") 
+  
+#  #  
+
+# ggsave(figure_folder('SX_demand_lineplot_TUNA.png'), width = 8, height = 6, unit = 'in')
+
+
+```
+
+```{r Figure 3. Aquafeed Comparison}
+fish_aquafeed_compare %>% 
+  group_by(PRODUCT,ALLSCEN3,YEAR) %>% 
+  summarise(value = sum(FISH_AQUAFEED_QUANTITY_COMPARE)) %>% 
+  left_join(crop_pub_names) %>% 
+  left_join(scen_pub_names) %>% 
+    mutate(PUBSCEN = factor(PUBSCEN, levels = pub_levels)) %>% 
+
+  ggplot() +
+  geom_col(aes(x = YEAR, y = value,fill =PUBFEED)) +
+  facet_wrap(~ PUBSCEN, ncol = 3) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(size = 7)) +
+  scale_fill_manual(values = (beyonce_palette(40) %>% rev)[-4], name = 'Feed Type') +
+  ylab("Aquafeed Production (1000 Tons)")
+
+aquafeed_2020 <- fish_aquafeed_compare %>% 
+  scen_include() %>% 
+  group_by(PRODUCT,ALLSCEN3,YEAR) %>% 
+  summarise(value = sum(FISH_AQUAFEED_QUANTITY_COMPARE)) %>% 
+  left_join(crop_pub_names) %>% 
+  ungroup() %>% 
+  filter(YEAR == '2020', ALLSCEN3 == 'SCEN_DIET0_CULTURE0_CAPTURE0') %>% 
+  mutate(ALLSCEN3 = 'SCEN_REF_2020')
+  
+fish_aquafeed_compare %>% 
+  scen_include() %>% 
+  group_by(PRODUCT,ALLSCEN3,YEAR) %>% 
+  summarise(value = sum(FISH_AQUAFEED_QUANTITY_COMPARE)) %>% 
+  left_join(crop_pub_names) %>%
+  left_join(scen_pub_names) %>% 
+
+  filter(YEAR == '2050') %>%
+  bind_rows(aquafeed_2020 %>% left_join(scen_pub_names)) %>% 
+  # pivot_wider(names_from = ALLSCEN3, values_from = value) %>% 
+  #   mutate(across(starts_with('SCEN'), function(x) x- SCEN_DIET0_CAPTURE0)) %>% 
+  # pivot_longer(starts_with('SCEN'),values_to = 'value', names_to = 'ALLSCEN3') %>% 
+    left_join(scen_pub_names) %>% 
+  filter(!is.na(value), value != 0) %>% 
+  group_by(PUBSCEN) %>%
+  mutate(tot = sum(value)) %>%
+  ungroup() %>%
+  mutate(PUBSCEN = fct_reorder(PUBSCEN, tot, .desc = FALSE)) %>% 
+  ggplot() +
+  geom_col(aes(x = PUBSCEN, y = value,fill =PUBFEED)) +
+  # facet_wrap(~ PUBSCEN, ncol = 3) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(size = 7)) +
+  scale_fill_manual(values = (beyonce_palette(40) %>% rev)[-4], name = 'Feed Type') +
+  xlab("") +
+  ylab("Aquafeed Production in 2050 (1000 Tons)")# +
+
+# tidy_globiom('FISH_AQUAFEED_QUANTITY_COMPARE') %>% 
+#   group_by(ALLSCEN3,YEAR) %>% 
+#   summarise(value = sum(FISH_AQUAFEED_QUANTITY_COMPARE)) %>% 
+#   # left_join(crop_pub_names) %>% 
+#   left_join(scen_pub_names) %>% 
+#   filter(YEAR == 2050) %>% 
+#   {int <<-.} %>% 
+#   mutate(value = 100*(value - int %>% filter(ALLSCEN3 == "SCEN_DIET0_CAPTURE0") %>% pull(value))/int %>% filter(ALLSCEN3 == "SCEN_DIET0_CAPTURE0") %>% pull(value)) %>% 
+#   ggplot()+
+#   aes(x = "2050", y = value, color = PUBSCEN, label = PUBSCEN) +
+#   geom_point() +
+#   geom_text_repel() +
+#   theme_classic() +
+#   ylab("Aquafeed Quantity (% Change from BAU)") +
+#   guides(color = "none") +
+#   scale_color_manual(name = 'Scenario',values = beyonce_palette(40, type = 'continuous', n = nrow(int))) +
+#   plot_layout(ncol = 2, widths = c(0.7,0.3)) +
+#   plot_annotation(tag_levels = 'a')
+  
+
+ggsave(figure_folder('S3_aquafeeds_barplot.png'), width = 8, height = 5, unit = 'in')
+```
+
+
+```{r Figure 4. Impact Figure}
+#### Specific Items have been selected...may need to be careful. 
+ref_2020 = FALSE
+source("scripts/glob.plot.R")
+if(ref_2020){
+reference_scenario = 'SCEN_REF2020'
+input_df <- output_ag %>% 
+  scen_include() %>%
+  bind_rows(
+    output_ag %>% filter(YEAR == 2020) %>%filter(ALLSCEN3 == "SCEN_DIET-10_CULTURE0_CAPTURE-10")%>%
+  mutate(ALLSCEN3 = 'SCEN_REF2020',YEAR = as.character(2050))
+  )
+}else{
+  reference_scenario = 'SCEN_DIET0_CULTURE0_CAPTURE0'
+  input_df <- output_ag %>% scen_include()
+}
+
+pt_land <- glob.plot(scen_baseline = reference_scenario, glob_df = input_df ,var_id = "LAND", 
+                     colors_plot = beyonce_palette(40)[c(1,6,7,4,5)],
+          title = "a. Land Cover in ", save = TRUE ) 
+
+pt_emis <- glob.plot(scen_baseline = reference_scenario,glob_df = input_df , var_id = "EMIS", save = TRUE,
+          title = "b. Emissions in ",
+          colors_plot = beyonce_palette(78))
+
+pt_watr <- glob.plot(scen_baseline = reference_scenario,glob_df =input_df , var_id = "WATR", save = TRUE, 
+          title = "c. Water Use in ",
+          colors_plot = beyonce_palette(2)) 
+
+pt_frtn <- glob.plot(scen_baseline = reference_scenario,glob_df = input_df , var_id = "FRTN", save = TRUE,
+          title = "d. Nitrogenous Fertilizer in ",
+          colors_plot = beyonce_palette(2)) 
+
+pt_land + pt_emis + pt_watr + pt_frtn
+ggsave(figure_folder('S4_sustainability_impacts.png'), width = 14, height = 8, unit = 'in')
+
+```
+
+```{r Figure 5. Impact Map}
+# Note this auto-saves
+############
+# Calculate variance across scenarios
+########
+
+source('scripts/glob.map.R')
+distinct_scen <- distinct(output, ALLSCEN3) # Get distinct values
+library(tmaptools)
+# Loop through each unique value in 'ALLSCEN3'
+#for (scen in distinct_scen$ALLSCEN3) {
+  for (scen in c('SCEN_DIET+10_CULTURE+50_CAPTURE-10','SCEN_DIET-10_CULTURE0_CAPTURE+10')) {
+  print(scen)
+  pubscen = scen_pub_names$PUBSCEN[scen_pub_names$ALLSCEN3 ==scen]
+#### Map Specific Items and Variables
+   scen_baseline = "SCEN_DIET0_CULTURE0_CAPTURE0"
+fish_map <-reg_map %>% 
+  mutate(Region37 = toupper(Region37)) %>% 
+  left_join(by = c("Region37" = "ANYREGION"),
+    (fish_var %>% 
+      # filter(ITEM %in% fish_final) %>%
+      filter(YEAR == 2050) %>% 
+       rename("OUTPUT" = "FISH_VAR_COMPARE") %>% 
+       left_join(country_names %>% distinct(COUNTRY_GLOBIOM_SHORT,ANYREGION) %>% 
+                   mutate(ALLCOUNTRY = toupper(COUNTRY_GLOBIOM_SHORT),
+                          ANYREGION = toupper(ANYREGION)), by = c("ALLCOUNTRY")) %>% 
+      group_by(ANYREGION,YEAR, ALLSCEN3) %>% 
+      summarise(OUTPUT = sum(OUTPUT, na.rm = TRUE)) %>%
+      pivot_wider(names_from = ALLSCEN3, values_from = OUTPUT) %>% 
+mutate(across(starts_with("SCEN"), ~ .x - !!sym(scen_baseline))) %>% 
+  dplyr::select(ANYREGION,YEAR, all_of(scen))
+    )) %>% 
+  tm_shape(projection = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m" ) +
+  tm_polygons(col = scen,
+              title = "Fish Production\nChange from Baseline\n(1000 T)",
+              pal = beyonce_palette(33)[-1] %>% rev(),
+              border.col = "white",
+              colorNA = 'grey80',
+              style = "cont",
+              midpoint = 0) +
+  tm_layout(main.title = 'c.',
+    # legend.position = c("bottom"),
+    legend.outside.position = "right" , legend.outside.size = .15,
+    frame = FALSE,
+    legend.text.size = 1.3,
+    frame.lwd = NA, panel.label.bg.color = NA,
+    # legend.position = "right",
+    main.title.size = 2,
+    asp = 2.1,
+    # main.title = names(to_map)[i], 
+    main.title.position = "left"
+  )
+
+output %>% mutate(
+  ITEM = recode(ITEM,"Managed Land" = "CRPLND"),
+  ITEM = recode(ITEM,"Managed Land" = "GRASSLAND")
+)
+crop_map <- glob.map(glob_df = output,
+         var_id = "LAND", 
+         make_facet = FALSE,
+         scen_baseline = scen_baseline,
+         scen = scen,
+         title = paste0(pubscen,"\na."),
+         save = FALSE,
+         legend = 'Cultivated Lands\nChange from Baseline\n(1000 ha)',
+         item = "Managed Land", colors_plot = beyonce_palette(33)[-1] %>% rev())
+
+forest_map <- glob.map(glob_df = output,
+         var_id = "LAND", 
+                  scen_baseline = scen_baseline,
+
+         make_facet = FALSE,
+         scen =scen,
+         title = 'b.',
+                  save = FALSE,
+         legend = 'Natural Lands\nChange from Baseline\n(1000 ha)',
+         item = c("FOREST","OTHNATVEG"), colors_plot = rev(beyonce_palette(33)[-1]))
+
+
+scen_map = tmap_arrange(crop_map$map_ob , forest_map$map_ob,fish_map)
+
+
+
+
+tmap_save(scen_map,filename = figure_folder(paste0(pubscen,"_MAP.png")), width = 12, height =14, dpi = 300)
+
+}
+```
+
+```{r}
+
+# Reduction quantities
+
+process_compare %>%
+  filter(ALLSCEN3 == 'SCEN_DIET+10_CULTURE+50_CAPTURE-10','SCEN_DIET-10_CULTURE0_CAPTURE+10') %>% # insert in proper
+  filter(str_detect(PROCESS,"REDUCTION"), PRODUCT == "FSHO") %>% 
+ # filter(YEAR == 2000) %>% 
+  mutate(id = case_when(
+    PROCESS %in% c("REDUCTIONMARN","REDUCTIONPELG") ~ "Whole - Pelagic/Marine",
+    PROCESS %>% str_detect("W") ~ "Waste - Any",
+    TRUE ~ "Whole - non-Pelagic/Marine"
+  )) %>% 
+  group_by(id, YEAR) %>% 
+  summarise(value = sum(PROCESS_COMPARE2)) %>% 
+    ggplot() +
+  geom_col(aes(x = YEAR, y = value, fill = id)) +
+  theme_classic() +
+  scale_fill_manual(name = "Source", values = beyonce_palette(40))+
+  ylab("Projected Reduction Rates")
+ggsave(figure_folder('reduction_barplot.png'), width = 8, height = 6, unit = 'in')  
+  
+  
+  
+
+```
+
+
+```{r}
+# Supplement FMFO Assumptions
+# Load the necessary library
+
+
+# Create a data frame for the values
+data <- data.frame(
+  Year = c(2000, 2010, 2020, 2030, 2040, 2050),
+  "Use of Pelagic Fish in FMFO" = c(0.95, 0.8, 0.6, 0.3, 0.2, 0.1),
+  "Use of Fish Trimmings in FMFO" = c(0.01, 0.08, 0.10, 0.2, 0.4, 0.6)
+)
+
+# Convert the data to a long format for ggplot
+library(reshape2)
+data_long <- melt(data, id.vars = "Year", 
+                  variable.name = "Parameter", 
+                  value.name = "Proportion")
+
+# Plot the data
+plot <- ggplot(data_long, aes(x = Year, y = Proportion, color = Parameter)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(#title = "Proportions of PELG and WASTE Going to FMFO Over Time",
+       x = "Year", 
+       y = "Minimum Biomass Use",
+       color = "") +
+  theme_classic()
+
+# Display the plot
+print(plot)
+```
+```{r}
+fish_var %>% group_by(FISHSPEC,YEAR) %>% 
+  summarise(tot = sum(FISH_VAR_COMPARE)) %>% print(n=Inf)
+
+ DemQuantity %>% 
+  scen_include %>% 
+  filter(PRODUCT %in% fish_final) %>% 
+    left_join(pWASTE_) %>% 
+    mutate(value = DEMQUANTITY_COMPARE/(1-ITEMw),
+           FISHSPEC = str_sub(PRODUCT, 1, -2)) %>% ### INVERT BACK TO LIVE WEIGHT
+  group_by(PRODUCT,
+    YEAR,ALLSCEN3) %>% 
+    #  filter(CURVE == 'QUANTITY') %>% 
+  summarise(dem = value %>% sum) %>% print(n=Inf)
+```
