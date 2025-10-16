@@ -24,6 +24,10 @@ library(patchwork)
 reference_scenario = ""
 load("1476.RData")
 
+# Create scenarios object for new plots
+scenarios <- output
+agg_scenario <- output_ag
+
 figure_folder <- function(x){
   path = file.path(getwd(),'Plots',
                    x)
@@ -164,7 +168,7 @@ ggsave(figure_folder('1_demand_lineplot.png'), width = 6, height = 4, unit = 'in
   geom_point() +
            # geom_text(aes(label = dem/1000)) +
 
-  ylab("Global Demand (MT)") +
+  ylab("Demand (MT)") +
   xlab("Year") +
   # ylim(0,100)+
   theme_classic() +
@@ -254,38 +258,80 @@ mutate(per_capita_kg = (value / 1000 / total_pop) * 1000) %>% # Uncomment these 
 
 ```
 
+```{r fed, unfed, catch table}
+fish_compare %>%
+  mutate(
+    PRODUCTION_TYPE = case_when(
+      FISHSYST == "CATCH" ~ "CATCH",
+      FISHFEEDSYST == "FED" ~ "FED_CULTURE",
+      FISHFEEDSYST == "NONFED" ~ "NONFED_CULTURE",
+      TRUE ~ "OTHER"
+    )
+  ) %>%
+  group_by(ALLSCEN3, YEAR, PRODUCTION_TYPE) %>%
+  summarise(FISH_VAR_COMPARE = sum(FISH_VAR_COMPARE), .groups = "drop") %>%
+  filter(YEAR %in% c(2020, 2050)) %>%
+  filter(ALLSCEN3 %in% c(
+    "SCEN_DIET-10_CULTURE0_CAPTURE-10",
+    "SCEN_DIET0_CULTURE0_CAPTURE0",
+    "SCEN_DIET+10_CULTURE+50_CAPTURE+10"
+  ))
+
+```
+
 ```{r Figure 2 Production Dynamics}
 ## Figure S1 Production Dynamics
-historical_data <- "YEAR,CATCH,CULTURE
-1950,18,0
-1960,25,1
-1970,36,3
-1980,49,5
-1990,82,15
-2000,91.3,29.6
-2010,85.6,51.8
-2020,90.8,88.3
-"
-# 1 2000    CATCH     91300.
-#  2 2000    CULTURE   29854.
-#  3 2010    CATCH     85669.
-#  4 2010    CULTURE   51756.
-#  5 2020    CATCH     90704.
-#  6 2020    CULTURE   78523.
-#  7 2030    CATCH     88293.
-#  8 2030    CULTURE  200384.
-#  9 2040    CATCH     88293.
-# 10 2040    CULTURE  458886.
-# 11 2050    CATCH     88293.
-# 12 2050    CULTURE 1118618.
 
-data <- read.csv(text = historical_data) %>% 
-  as_tibble() %>% 
-  pivot_longer(-YEAR,names_to = 'TYPE',values_to = 'output') %>% 
-  mutate(PUBSCEN = "FAO",
-         YEAR = as.character(YEAR),
-         output = 1000*output,
-         Source = 'FAO') 
+# --- Load core FAO datasets from fishstat package ---
+library(fishstat)
+data("production") # Global aquaculture + capture quantities (1950–2023)
+data("species") # Lookup for species groupings (incl. 'yearbook')
+data("area") # Lookup for areas (incl. 'inlandmarine')
+
+# --- Avoid name collisions: rename lookup tables ---
+species_lu <- species
+area_lu <- area
+
+# --- Keep live-weight quantities (Q_tlw) and positive values ---
+prod <- production %>%
+  filter(measure == "Q_tlw", value > 0)
+
+# --- Join lookups to add 'yearbook' (species grouping) and 'inlandmarine' (area type) ---
+prod <- prod %>%
+  left_join(species_lu %>% select(species, yearbook), by = "species") %>%
+  left_join(area_lu %>% select(area, inlandmarine), by = "area")
+
+# --- Filter to aquatic animals only (exclude algae, shells/pearls, mammals, reptiles) ---
+prod_animals <- prod %>%
+  filter(grepl("Fish, crustaceans and molluscs", yearbook, fixed = TRUE))
+
+# --- Label origin (Capture vs Aquaculture) from 'source' field ---
+prod_animals <- prod_animals %>%
+  mutate(origin = ifelse(source == "CAPTURE", "Capture", "Aquaculture"))
+
+# --- World totals per year by origin (million tonnes) ---
+world_totals <- prod_animals %>%
+  group_by(year, origin) %>%
+  summarise(value_mt = sum(value) / 1e6, .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = origin, values_from = value_mt)
+
+# --- Extract exact FAO values at decade marks ---
+decades <- c(1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020)
+fao_decades <- world_totals %>%
+  filter(year %in% decades) %>%
+  arrange(year)
+
+# --- Transform to match expected format ---
+data <- fao_decades %>%
+  pivot_longer(cols = c(Aquaculture, Capture), 
+               names_to = 'origin_type', 
+               values_to = 'output') %>%
+  mutate(TYPE = ifelse(origin_type == "Capture", "CATCH", "CULTURE"),
+         YEAR = as.character(year),
+         output = output * 1000,  # Convert Mt to thousands of tonnes
+         PUBSCEN = "FAO",
+         Source = "FAO") %>%
+  select(YEAR, TYPE, output, PUBSCEN, Source)
 
 
 production_df <- production_df_ %>% 
@@ -731,7 +777,7 @@ plot <- ggplot(data_long, aes(x = Year, y = Proportion, color = Parameter)) +
 # Display the plot
 print(plot)
 ```
-```{r}
+```{r Figure - Production by System Barplot}
 fish_var %>% group_by(FISHSPEC,YEAR) %>% 
   summarise(tot = sum(FISH_VAR_COMPARE)) %>% print(n=Inf)
 
@@ -745,4 +791,270 @@ fish_var %>% group_by(FISHSPEC,YEAR) %>%
     YEAR,ALLSCEN3) %>% 
     #  filter(CURVE == 'QUANTITY') %>% 
   summarise(dem = value %>% sum) %>% print(n=Inf)
+
+# Load lookup table and join to scenarios
+lookup <- read.csv("lookup_table_full.csv")
+scenarios <- scenarios %>% left_join(lookup, by = "ITEM")
+
+# Prepare data for production by system
+ref2020 <- scenarios %>% 
+  subset(VAR_ID == "PROD") %>% 
+  subset(YEAR == 2020) %>% 
+  subset(ALLSCEN3 == "SCEN_DIET0_CULTURE0_CAPTURE0")
+ref2020$ALLSCEN3 <- "Reference 2020"
+
+scen <- scenarios %>% 
+  subset(VAR_ID == "PROD") %>% 
+  subset(YEAR == 2050) %>% 
+  subset(ALLSCEN3 %in% c("SCEN_DIET0_CULTURE0_CAPTURE0", 
+                          "SCEN_DIET+10_CULTURE+50_CAPTURE+10", 
+                          "SCEN_DIET-10_CULTURE0_CAPTURE-10")) %>% 
+  mutate(ALLSCEN3 = recode(ALLSCEN3,
+                           "SCEN_DIET0_CULTURE0_CAPTURE0" = "BAU",
+                           "SCEN_DIET+10_CULTURE+50_CAPTURE+10" = "Blue Transformation",
+                           "SCEN_DIET-10_CULTURE0_CAPTURE-10" = "Barriers to Blue Growth"))
+
+scen <- rbind(ref2020, scen)
+
+scen <- scen %>% 
+  subset(ITEM %in% c("BVMEAT", "SGMEAT", "PGMEAT", "PTMEAT", "FRSHF", "SALMF", 
+                     "MARNF", "CEPHF", "CRSTF", "DMRSF", "MLSCF", "PELGF", 
+                     "SHRIF", "TUNAF", "FRSHW", "SALMW", "MARNW", "CEPHW", 
+                     "CRSTW", "DMRSW", "MLSCW", "PELGW", "SHRIW", "TUNAW"))
+
+scen$ALLSCEN3 <- as.factor(scen$ALLSCEN3)
+scen$SYST <- as.factor(scen$SYST)
+levels(scen$SYST) <- c("AQUA_FW", "AQUA_M", "BOVID", "CATCH_M", "CATCH_FW", "PIG", "POULTRY")
+
+# Create publication-ready system names mapping
+system_names <- tibble(
+  SYST = c("BOVID", "PIG", "POULTRY", "CATCH_FW", "CATCH_M", "AQUA_FW", "AQUA_M"),
+  PUBSYST = c("Cattle", "Pig", "Poultry", "Capture (Freshwater)", "Capture (Marine)", 
+              "Aquaculture (Freshwater)", "Aquaculture (Marine)")
+)
+
+system_colors <- c(
+  "Capture (Freshwater)" = "#66c2a5",
+  "Capture (Marine)" = "#1b9e77",
+  "Aquaculture (Freshwater)" = "#2c7fb8",
+  "Aquaculture (Marine)" = "lightblue",
+  "Cattle" = "pink4",
+  "Pig" = "#e9a3c9",
+  "Poultry" = "#f1b6da"
+)
+
+level_order <- c("Reference 2020", "BAU", "Barriers to Blue Growth", "Blue Transformation")
+
+scen <- scen %>% 
+  group_by(ALLSCEN3, SYST) %>%
+  summarise(prod_kt = sum(OUTPUT, na.rm = TRUE), .groups = "drop") %>%
+  left_join(system_names, by = "SYST") %>%
+  mutate(PUBSYST = factor(PUBSYST, levels = c("Cattle", "Pig", "Poultry", 
+                                                "Capture (Freshwater)", "Capture (Marine)", 
+                                                "Aquaculture (Freshwater)", "Aquaculture (Marine)")))
+
+# Create production by system barplot with matching style
+prod_system_barplot <- ggplot(scen, aes(
+  x = ALLSCEN3, 
+  y = prod_kt, 
+  fill = PUBSYST
+)) +
+  geom_bar(stat = "identity", width = 0.7, position = "stack") +
+  scale_fill_manual(values = system_colors, name = "") +
+  labs(
+    title = "a) Global Food Production by System",
+    x = NULL,
+    y = "Production (1000 tonnes)"
+  ) +
+  scale_x_discrete(limits = level_order) +
+  theme_classic(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 14),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+# Create production lineplot for patchwork
+# Recreate FAO data from fishstat package
+library(fishstat)
+data("production")
+data("species")
+data("area")
+
+# Process FAO data
+fao_prod <- production %>%
+  filter(measure == "Q_tlw", value > 0) %>%
+  left_join(species %>% select(species, yearbook), by = "species") %>%
+  left_join(area %>% select(area, inlandmarine), by = "area") %>%
+  filter(grepl("Fish, crustaceans and molluscs", yearbook, fixed = TRUE)) %>%
+  mutate(origin = ifelse(source == "CAPTURE", "Capture", "Aquaculture"))
+
+fao_totals <- fao_prod %>%
+  group_by(year, origin) %>%
+  summarise(value_mt = sum(value) / 1e6, .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = origin, values_from = value_mt)
+
+fao_data <- fao_totals %>%
+  filter(year %in% c(1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020)) %>%
+  pivot_longer(cols = c(Aquaculture, Capture), 
+               names_to = 'origin_type', 
+               values_to = 'output') %>%
+  mutate(TYPE = ifelse(origin_type == "Capture", "CATCH", "CULTURE"),
+         YEAR = as.character(year),
+         output = output * 1000,
+         PUBSCEN = "FAO",
+         Source = "FAO") %>%
+  select(YEAR, TYPE, output, PUBSCEN, Source)
+
+prod_lineplot <- production_df %>% 
+  filter(TYPE %in% c("CULTURE","CATCH"), ALLSCEN3 != "SCEN_REF_2020") %>% 
+  mutate(Source = 'This Study') %>% 
+  filter(!is.na(PUBSCEN)) %>% 
+  bind_rows(fao_data) %>% 
+  filter(ALLSCEN3 %in% raw_scen_names | is.na(ALLSCEN3)) %>% 
+  dplyr::select(-PUBSCEN) %>%
+  left_join(scen_pub_names_new) %>% 
+  mutate(PUBSCEN = ifelse(is.na(PUBSCEN), "FAO", PUBSCEN)) %>%
+  ggplot() + 
+  geom_line(aes(x = YEAR, y = output/1000, linetype = Source, group = PUBSCEN, col = PUBSCEN)) +
+  geom_point(aes(x = YEAR, y = output/1000, group = PUBSCEN, col = PUBSCEN)) +
+  theme_classic(base_size = 14) +
+  scale_color_manual(values = beyonce_palette(40, type = 'continuous', n = 4) %>% rev(), name = 'Scenario') +
+  scale_linetype_manual(values = c("dashed", "solid")) +
+  labs(title = "b) Production Trends Over Time", y = 'Production (Mt)', x = NULL) +
+  facet_wrap(~TYPE, ncol = 1, scales = 'free') +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+# Combine plots
+production_multi <- prod_system_barplot / prod_lineplot +
+  plot_layout(heights = c(1, 1.5)) +
+  plot_annotation(
+    theme = theme(plot.title = element_text(face = "bold", size = 16))
+  )
+
+production_multi
+ggsave(figure_folder("production_combined.png"), width = 10, height = 12, unit = 'in')
+```
+
+```{r Figure - Feed Crop Usage Barplot}
+# Create publication-ready crop names mapping
+feed_crop_names <- tibble(
+  ITEM = c("BARL", "CASS", "CORN", "COTT", "GNUT", "MILL", "POTA", 
+           "RICE", "SOYA", "SRGH", "SUGC", "SUNF", "SWPO", "WHEA",
+           "RAPE", "OPAL", "BEAD", "CHKP", "RAPE_ML", "SOY_ML",
+           "CORN_DG", "WHEA_DG"),
+  PUBCROP = c("Barley", "Cassava", "Corn", "Cotton", "Groundnut", "Millet", "Potato",
+              "Rice", "Soybean", "Sorghum", "Sugarcane", "Sunflower", "Sweet Potato", "Wheat",
+              "Rapeseed", "Oil Palm", "Beans", "Chickpea", "Rapeseed Meal", "Soybean Meal",
+              "Corn DDGS", "Wheat DDGS")
+)
+
+# Prepare feed crop data
+feed2020 <- scenarios %>% 
+  subset(VAR_ID == "FEED") %>% 
+  subset(YEAR == 2020) %>% 
+  subset(ALLSCEN3 == "SCEN_DIET0_CULTURE0_CAPTURE0")
+feed2020$ALLSCEN3 <- "Reference 2020"
+
+feed <- scenarios %>% 
+  subset(VAR_ID == "FEED") %>% 
+  subset(YEAR == 2050) %>% 
+  subset(ALLSCEN3 %in% c("SCEN_DIET0_CULTURE0_CAPTURE0", 
+                          "SCEN_DIET+10_CULTURE+50_CAPTURE+10", 
+                          "SCEN_DIET-10_CULTURE0_CAPTURE-10")) %>% 
+  mutate(ALLSCEN3 = recode(ALLSCEN3,
+                           "SCEN_DIET0_CULTURE0_CAPTURE0" = "BAU",
+                           "SCEN_DIET+10_CULTURE+50_CAPTURE+10" = "Blue Transformation",
+                           "SCEN_DIET-10_CULTURE0_CAPTURE-10" = "Barriers to Blue Growth"))
+
+feed <- rbind(feed2020, feed)
+
+feed <- feed %>% 
+  group_by(ALLSCEN3, ITEM) %>%
+  summarise(OUTPUT = sum(OUTPUT, na.rm = TRUE), .groups = "drop") %>%
+  left_join(feed_crop_names, by = "ITEM") %>%
+  mutate(PUBCROP = ifelse(is.na(PUBCROP), ITEM, PUBCROP)) %>%
+  mutate(ALLSCEN3 = factor(ALLSCEN3, levels = level_order))
+
+# Create feed crop barplot with aquafeed style
+# Generate enough colors for all feed items
+n_feed_items <- length(unique(feed$PUBCROP))
+feed_colors <- beyonce_palette(40, n = n_feed_items, type = "continuous")
+
+feed_crop_barplot <- ggplot(feed, aes(x = ALLSCEN3, y = OUTPUT, fill = PUBCROP)) +
+  geom_col(width = 0.7, position = "stack") +
+  scale_fill_manual(values = feed_colors, name = 'Crop Type') +
+  labs(
+    title = "a) Global Feed Crop Usage",
+    x = NULL,
+    y = "Feed Production (1000 tonnes)"
+  ) +
+  scale_x_discrete(limits = level_order) +
+  theme_classic(base_size = 14) +
+  theme(
+    legend.position = "right",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(size = 12),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+# Recreate aquafeed barplot for patchwork
+aquafeed_2020_data <- fish_aquafeed_compare %>% 
+  scen_include() %>% 
+  group_by(PRODUCT, ALLSCEN3, YEAR) %>% 
+  summarise(value = sum(FISH_AQUAFEED_QUANTITY_COMPARE), .groups = 'drop') %>% 
+  left_join(crop_pub_names) %>% 
+  ungroup() %>% 
+  filter(YEAR == '2020', ALLSCEN3 == 'SCEN_DIET0_CULTURE0_CAPTURE0') %>% 
+  mutate(ALLSCEN3 = 'SCEN_REF_2020')
+
+aquafeed_barplot <- fish_aquafeed_compare %>% 
+  scen_include() %>% 
+  group_by(PRODUCT, ALLSCEN3, YEAR) %>% 
+  summarise(value = sum(FISH_AQUAFEED_QUANTITY_COMPARE), .groups = 'drop') %>% 
+  left_join(crop_pub_names) %>%
+  left_join(scen_pub_names_new) %>% 
+  filter(YEAR == '2050') %>%
+  bind_rows(
+    aquafeed_2020_data %>% 
+      left_join(scen_pub_names_new) %>%
+      mutate(PUBSCEN = "Reference 2020")
+  ) %>%
+  filter(!is.na(value), value != 0) %>%
+  mutate(PUBSCEN = factor(PUBSCEN, levels = level_order)) %>%
+  ggplot() +
+  geom_col(aes(x = PUBSCEN, y = value, fill = PUBFEED)) +
+  scale_x_discrete(limits = level_order) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 12),
+    plot.margin = margin(10, 10, 10, 10)
+  ) +
+  scale_fill_manual(values = (beyonce_palette(40) %>% rev)[-4], name = 'Feed Type') +
+  labs(
+    title = "b) Aquafeed Production in 2050",
+    x = NULL,
+    y = "Aquafeed Production (1000 tonnes)"
+  ) +
+  theme(plot.title = element_text(face = "bold", size = 14))
+
+# Combine plots
+feed_combined <- feed_crop_barplot / aquafeed_barplot +
+  plot_layout(heights = c(1, 1)) +
+  plot_annotation(
+    theme = theme(plot.title = element_text(face = "bold", size = 16))
+  )
+
+feed_combined
+ggsave(figure_folder("feed_combined.png"), width = 10, height = 10, unit = 'in')
 ```
