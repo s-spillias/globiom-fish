@@ -1,16 +1,11 @@
-# demquantity <- readRDS(here("_Analysis/dem_compare.RDS"))
-# 
-# demquantity %>% 
-#   filter(REGION == "USAREG") %>% 
-#   filter(YEAR == 2050) %>% 
-#   filter(PRODUCT %in% c("TUNAF","SALMF","CORN","BVMEAT")) %>% 
-#   ggplot() +
-#   geom_col(aes(x = ALLSCEN3, y = DEMQUANTITY_COMPARE, fill = PRODUCT),
-#            position = "stack") +
-#   theme_classic()
+# glob.plot() — stacked delta-from-baseline bar panels for Figure 4.
+#
+# For a given indicator (var_id: LAND, EMIS, WATR, FRTN) it sums each ITEM by
+# scenario, subtracts the baseline scenario, and draws a horizontal stacked bar
+# of the change from baseline. Sourced by R/make_figures.R, which supplies the
+# global objects scen_pub_names and figure_folder().
 
-
-  glob.plot <- function(glob_df, 
+  glob.plot <- function(glob_df,
                         var_id, 
                         colors_plot,
                         scen_baseline = "SCEN_BAU", 
@@ -86,60 +81,10 @@ plot_f <- ggplot(df_dat_) +
     geom_hline(yintercept = 0) +
   ggtitle(paste0(title, year))
 
-if(save){message("Saving here: ", paste0("Plots/",var_id,"_",year,".png"))
-ggsave(paste0("Plots/",var_id,"_",year,".png"), dpi = 300, width = 8, height = 6, device = "png")
+if(save){
+  out_png <- figure_folder(paste0(var_id, "_", year, ".png"))
+  message("Saving: ", out_png)
+  ggsave(out_png, dpi = 300, width = 8, height = 6, device = "png")
 }
 return(plot_f)
   }
-  
-
-# 
-# bio_dat <- globiom_ag %>% ####### use 'globiom' or 'bio_comp'
-#   filter(YEAR == 2050) %>% 
-#   filter(VAR_ID == "ABII",
-#          REGION_AG == "World") %>% 
-#   #filter(VAR_UNIT == j) %>% 
-#   # group_by(ITEM_AG,SW_Scen) %>% 
-#   #   summarise(OUTPUT_AG = mean(OUTPUT_AG, na.rm = TRUE)) %>% 
-#   pivot_wider(names_from = SW_Scen, values_from = OUTPUT_AG) %>% 
-#   mutate(across(.cols = starts_with("SW_"), .fns = list(
-#     delta_Baseline = function(x) {(x-SW_Base) # /SW_Base
-#     }),
-#     .names = "{.fn}.{.col}" )) %>% 
-#   dplyr::select(!starts_with("SW_")) %>% 
-#   pivot_longer(cols = starts_with("delta_Baseline"), values_to = "delta_Baseline", names_to = "SW_Scen") %>%
-#   mutate(SW_Scen = str_remove(SW_Scen, "delta_Baseline.") ) %>%
-#   rename("OUTPUT_AG"="delta_Baseline") %>% 
-#   filter(SW_Scen != "SW_Base") %>% 
-#   #  filter(!(ITEM_AG %in% c("OTHLAND","OTHAGRI","PLANTATION") )) %>% 
-#   pub_scen() %>% 
-#   filter((SW_Scen %in% sw_do)) 
-# # mutate(SW_Scen = factor(SW_Scen, levels = sw_do#names(scen_col)
-# #                           )) 
-# 
-# bio_col = beyonce_palette(39)[c(1)] %>% setNames(bio_dat$ITEM_AG %>% unique)
-# 
-# 
-# #%>% 
-# # mutate(ITEM_AG =  factor(ITEM_AG, levels = c("Forest","Other Vegetation","Grassland","Cropland")))
-# bio_pal = scale_fill_manual(name = "BII Indicator",values = bio_col, guide = guide_legend(reverse = FALSE)  )
-# 
-# ( bio_plots <-  ggplot(bio_dat) +
-#     geom_col(aes(x= SW_Scen,
-#                  y= OUTPUT_AG, 
-#                  fill = ITEM_AG), 
-#              position = "stack") +
-#     bio_pal +
-#     # facet_wrap(~REGION_AG,scales = "free" ) +
-#     theme_classic() +
-#     output_legend +
-#     #coord_flip() +
-#     #facet_grid(~VAR_ID,  scales = "free") +
-#     ylab(paste0(ifelse(i == 1,"BII (Species Presence)","BII / MJ"))) + # in ",
-#     #  str_replace_all(,"_","/") %>% 
-#     #   str_replace_all("-"," "))) +
-#     xlab(NULL) +
-#     geom_hline(yintercept = 0) +
-#     theme(legend.position = "none") +
-#     coord_flip() +
-#     ggtitle("A-5. Biodiversity Conserved") )

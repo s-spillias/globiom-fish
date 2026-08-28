@@ -1,0 +1,23 @@
+# ---- Large model data / outputs (regenerated from GLOBIOM runs) ----
+# These are far too large for git (hundreds of MB; .gdx exceeds GitHub's 100MB limit).
+# The analysis bundle data/<version>.RData and raw .gdx are obtained separately
+# (see README "Data availability"); they live in data/ but are not tracked.
+*.RData
+*.gdx
+*.7z
+*.zip
+
+# ---- Local-only working material (manuscript, scratch, superseded pipeline) ----
+_archive/
+
+# R session / cache artifacts
+.Rhistory
+.RData
+.Rproj.user/
+*.rds.tmp
+~$*
+Rplots.pdf
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

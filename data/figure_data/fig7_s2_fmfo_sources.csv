@@ -1,0 +1,19 @@
+year,source,proportion
+2000,Whole pelagic/marine fish,0.95
+2010,Whole pelagic/marine fish,0.80
+2020,Whole pelagic/marine fish,0.60
+2030,Whole pelagic/marine fish,0.30
+2040,Whole pelagic/marine fish,0.20
+2050,Whole pelagic/marine fish,0.10
+2000,Whole non-pelagic/marine fish,0.04
+2010,Whole non-pelagic/marine fish,0.12
+2020,Whole non-pelagic/marine fish,0.30
+2030,Whole non-pelagic/marine fish,0.50
+2040,Whole non-pelagic/marine fish,0.40
+2050,Whole non-pelagic/marine fish,0.30
+2000,Processing waste (trimmings),0.01
+2010,Processing waste (trimmings),0.08
+2020,Processing waste (trimmings),0.10
+2030,Processing waste (trimmings),0.20
+2040,Processing waste (trimmings),0.40
+2050,Processing waste (trimmings),0.60

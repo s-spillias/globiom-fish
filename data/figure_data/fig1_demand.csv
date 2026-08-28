@@ -1,0 +1,37 @@
+product_type,YEAR,PUBSCEN,value
+Fish,2000,BAU,120044.21605285
+Fish,2010,BAU,136379.03219184905
+Fish,2020,BAU,168858.1880311
+Fish,2030,BAU,182141.54815216834
+Fish,2040,BAU,191311.7376652608
+Fish,2050,BAU,198631.6649694903
+Fish,2000,Barriers to Blue Growth,120044.21605285
+Fish,2010,Barriers to Blue Growth,136379.03219184905
+Fish,2020,Barriers to Blue Growth,168858.1880311
+Fish,2030,Barriers to Blue Growth,177060.56230501016
+Fish,2040,Barriers to Blue Growth,179968.0921036286
+Fish,2050,Barriers to Blue Growth,181284.97529460135
+Fish,2000,Blue Transformation,120044.21605285
+Fish,2010,Blue Transformation,136379.03219184905
+Fish,2020,Blue Transformation,168858.1880311
+Fish,2030,Blue Transformation,184088.90250858275
+Fish,2040,Blue Transformation,199413.2700484799
+Fish,2050,Blue Transformation,213793.9564005154
+Livestock,2000,BAU,1069118.9729360852
+Livestock,2010,BAU,1267013.7552882794
+Livestock,2020,BAU,1527266.5278175343
+Livestock,2030,BAU,1765047.1814617806
+Livestock,2040,BAU,1974908.9950410696
+Livestock,2050,BAU,2149678.12357845
+Livestock,2000,Barriers to Blue Growth,1069118.9729360852
+Livestock,2010,Barriers to Blue Growth,1267013.7552882794
+Livestock,2020,Barriers to Blue Growth,1527266.5278175343
+Livestock,2030,Barriers to Blue Growth,1779840.5595325162
+Livestock,2040,Barriers to Blue Growth,2013257.7712115904
+Livestock,2050,Barriers to Blue Growth,2218431.172272735
+Livestock,2000,Blue Transformation,1069118.9729360852
+Livestock,2010,Blue Transformation,1267013.7552882794
+Livestock,2020,Blue Transformation,1527266.5278175343
+Livestock,2030,Blue Transformation,1752172.4677056433
+Livestock,2040,Blue Transformation,1933179.1574791023
+Livestock,2050,Blue Transformation,2072011.64838318

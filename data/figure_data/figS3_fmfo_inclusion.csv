@@ -1,0 +1,31 @@
+group,year,fmfo_pct
+Freshwater fish,2000,12.38
+Salmonids,2000,59.78
+Marine finfish,2000,54.02
+Shrimp,2000,26.99
+Other crustaceans,2000,25.03
+Freshwater fish,2010,6.18
+Salmonids,2010,32.86
+Marine finfish,2010,30.01
+Shrimp,2010,15.73
+Other crustaceans,2010,14.38
+Freshwater fish,2020,2.47
+Salmonids,2020,14.3
+Marine finfish,2020,11.9
+Shrimp,2020,6.41
+Other crustaceans,2020,7.21
+Freshwater fish,2030,1.0
+Salmonids,2030,6.03
+Marine finfish,2030,4.67
+Shrimp,2030,2.53
+Other crustaceans,2030,3.55
+Freshwater fish,2040,0.44
+Salmonids,2040,2.54
+Marine finfish,2040,1.95
+Shrimp,2040,1.03
+Other crustaceans,2040,1.76
+Freshwater fish,2050,0.21
+Salmonids,2050,1.08
+Marine finfish,2050,0.87
+Shrimp,2050,0.44
+Other crustaceans,2050,0.88
